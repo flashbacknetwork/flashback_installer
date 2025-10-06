@@ -164,6 +164,14 @@ if [[ -n "${NETWORK_JSON_LOCAL_PATH}" ]]; then
   fi
 fi
 
+# Expand tilde paths for SSL certificates
+S3_CERT_SRC="${S3_CERT_SRC/#\~/$HOME}"
+S3_KEY_SRC="${S3_KEY_SRC/#\~/$HOME}"
+GCS_CERT_SRC="${GCS_CERT_SRC/#\~/$HOME}"
+GCS_KEY_SRC="${GCS_KEY_SRC/#\~/$HOME}"
+BLOB_CERT_SRC="${BLOB_CERT_SRC/#\~/$HOME}"
+BLOB_KEY_SRC="${BLOB_KEY_SRC/#\~/$HOME}"
+
 # Check if SSL cert paths were provided via command line
 if [[ -z "$S3_CERT_SRC" || -z "$S3_KEY_SRC" || -z "$GCS_CERT_SRC" || -z "$GCS_KEY_SRC" || -z "$BLOB_CERT_SRC" || -z "$BLOB_KEY_SRC" ]]; then
   echo "You now need to ensure the three certificate pairs exist on this machine."
@@ -625,5 +633,3 @@ echo "- S3:  https://$S3_DOMAIN"
 echo "- GCS: https://$GCS_DOMAIN"
 echo "- BLOB: https://$BLOB_DOMAIN"
 echo "Note: If you were newly added to the docker group, you may need to log out/in."
-
-
