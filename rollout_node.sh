@@ -2,6 +2,17 @@
 
 set -euo pipefail
 
+# Sample usage
+# bash deploy/scripts/rollout_devtest.sh -r eu-central-1 -d flashback.tech -p gcp \
+#   -o 7d231739-6b33-476d-b2a3-e1bf6db742a5 \
+#   -k deploy/scripts/private_key.pem -b https://devbackend-ce55dd10.flashback.tech
+#  -s3crt ~/s3-eu-central-1-gcp.crt \
+#  -s3key ~/s3-eu-central-1-gcp.key \
+#  -gcscrt ~/gcs-eu-central-1-gcp.crt \
+#  -gcskey ~/gcs-eu-central-1-gcp.key \
+#  -blobcrt ~/blob-eu-central-1-gcp.crt \
+#  -blobkey ~/blob-eu-central-1-gcp.key
+
 # Rollout script for a Flashback node on Ubuntu 22.04/24.04
 # - Installs Docker and Compose
 # - Prepares /opt/flashback directory
@@ -22,14 +33,32 @@ ORG_ID=""
 KEY_PRIVATE_LOCAL_PATH=""  # Path on this machine to RSA private key to copy
 NETWORK_JSON_LOCAL_PATH=""  # Optional: flashback-network-delegated.json local path to copy
 
+# SSL certificate paths
+S3_CERT_SRC=""
+S3_KEY_SRC=""
+GCS_CERT_SRC=""
+GCS_KEY_SRC=""
+BLOB_CERT_SRC=""
+BLOB_KEY_SRC=""
+
 usage() {
-  echo "Usage: $0 -r <region> -d <root-domain> [-p <provider>] [-b <backend-url>] -o <org-id> -k <path-to-private-key> [-n <path-to-network-json>]" >&2
+  echo "Usage: $0 -r <region> -d <root-domain> [-p <provider>] [-b <backend-url>] -o <org-id> -k <path-to-private-key> [-n <path-to-network-json>] [SSL cert options]" >&2
+  echo "SSL cert options:" >&2
+  echo "  -s3crt <path>    Path to S3 certificate (.crt)" >&2
+  echo "  -s3key <path>    Path to S3 private key (.key)" >&2
+  echo "  -gcscrt <path>   Path to GCS certificate (.crt)" >&2
+  echo "  -gcskey <path>   Path to GCS private key (.key)" >&2
+  echo "  -blobcrt <path>  Path to BLOB certificate (.crt)" >&2
+  echo "  -blobkey <path>  Path to BLOB private key (.key)" >&2
   echo "Examples:" >&2
-  echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/keyR_private.pem" >&2
+  echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/keyR_private.pem \\" >&2
+  echo "     -s3crt ~/s3.crt -s3key ~/s3.key \\" >&2
+  echo "     -gcscrt ~/gcs.crt -gcskey ~/gcs.key \\" >&2
+  echo "     -blobcrt ~/blob.crt -blobkey ~/blob.key" >&2
   echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./keyR_private.pem -b https://backend.flashback.tech" >&2
 }
 
-while getopts ":r:p:d:b:o:k:n:h" opt; do
+while getopts ":r:p:d:b:o:k:n:s3crt:s3key:gcscrt:gcskey:blobcrt:blobkey:h" opt; do
   case "$opt" in
     r) REGION="$OPTARG" ;;
     p) PROVIDER="$OPTARG" ;;
@@ -38,6 +67,12 @@ while getopts ":r:p:d:b:o:k:n:h" opt; do
     o) ORG_ID="$OPTARG" ;;
     k) KEY_PRIVATE_LOCAL_PATH="$OPTARG" ;;
     n) NETWORK_JSON_LOCAL_PATH="$OPTARG" ;;
+    s3crt) S3_CERT_SRC="$OPTARG" ;;
+    s3key) S3_KEY_SRC="$OPTARG" ;;
+    gcscrt) GCS_CERT_SRC="$OPTARG" ;;
+    gcskey) GCS_KEY_SRC="$OPTARG" ;;
+    blobcrt) BLOB_CERT_SRC="$OPTARG" ;;
+    blobkey) BLOB_KEY_SRC="$OPTARG" ;;
     h) usage; exit 0 ;;
     :) echo "Option -$OPTARG requires an argument" >&2; usage; exit 1 ;;
     \?) echo "Invalid option: -$OPTARG" >&2; usage; exit 1 ;;
@@ -129,15 +164,20 @@ if [[ -n "${NETWORK_JSON_LOCAL_PATH}" ]]; then
   fi
 fi
 
-echo "You now need to ensure the three certificate pairs exist on this machine."
-echo "You can scp them with any filenames, then provide the paths here for normalization."
+# Check if SSL cert paths were provided via command line
+if [[ -z "$S3_CERT_SRC" || -z "$S3_KEY_SRC" || -z "$GCS_CERT_SRC" || -z "$GCS_KEY_SRC" || -z "$BLOB_CERT_SRC" || -z "$BLOB_KEY_SRC" ]]; then
+  echo "You now need to ensure the three certificate pairs exist on this machine."
+  echo "You can scp them with any filenames, then provide the paths here for normalization."
+  echo "Alternatively, you can provide them via command line options: -s3crt, -s3key, -gcscrt, -gcskey, -blobcrt, -blobkey"
+  echo ""
 
-read -r -p "Path to S3 cert (.crt): " S3_CERT_SRC
-read -r -p "Path to S3 key  (.key): " S3_KEY_SRC
-read -r -p "Path to GCS cert (.crt): " GCS_CERT_SRC
-read -r -p "Path to GCS key  (.key): " GCS_KEY_SRC
-read -r -p "Path to BLOB cert (.crt): " BLOB_CERT_SRC
-read -r -p "Path to BLOB key  (.key): " BLOB_KEY_SRC
+  [[ -z "$S3_CERT_SRC" ]] && read -r -p "Path to S3 cert (.crt): " S3_CERT_SRC
+  [[ -z "$S3_KEY_SRC" ]] && read -r -p "Path to S3 key  (.key): " S3_KEY_SRC
+  [[ -z "$GCS_CERT_SRC" ]] && read -r -p "Path to GCS cert (.crt): " GCS_CERT_SRC
+  [[ -z "$GCS_KEY_SRC" ]] && read -r -p "Path to GCS key  (.key): " GCS_KEY_SRC
+  [[ -z "$BLOB_CERT_SRC" ]] && read -r -p "Path to BLOB cert (.crt): " BLOB_CERT_SRC
+  [[ -z "$BLOB_KEY_SRC" ]] && read -r -p "Path to BLOB key  (.key): " BLOB_KEY_SRC
+fi
 
 for f in "$S3_CERT_SRC" "$S3_KEY_SRC" "$GCS_CERT_SRC" "$GCS_KEY_SRC" "$BLOB_CERT_SRC" "$BLOB_KEY_SRC"; do
   if [[ ! -f "$f" ]]; then
