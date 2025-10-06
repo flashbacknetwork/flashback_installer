@@ -240,7 +240,7 @@ SECRETS_PAYLOAD=$(jq -nc \
   --argjson timestamp "$TIMESTAMP" \
   --arg signature "$REQ_SIGNATURE" \
   --arg id_org "$ORG_ID" \
-  '{ip:$ip,region:$region,timestamp:$timestamp,signature:$signature} + ( $id_org | length > 0 ? {id_org:$id_org} : {} )')
+  '{ip:$ip,region:$region,timestamp:$timestamp,signature:$signature,id_org:$id_org}')
 
 SECRETS_RESP=$(curl -sS -X POST "${BACKEND_URL%/}/secrets" -H "Content-Type: application/json" -d "$SECRETS_PAYLOAD") || {
   echo "Error: failed to fetch secrets from backend" >&2; exit 1; }
