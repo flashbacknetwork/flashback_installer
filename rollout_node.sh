@@ -6,12 +6,12 @@ set -euo pipefail
 # bash deploy/scripts/rollout_devtest.sh -r eu-central-1 -d flashback.tech -p gcp \
 #   -o 7d231739-6b33-476d-b2a3-e1bf6db742a5 \
 #   -k deploy/scripts/private_key.pem -b https://devbackend-ce55dd10.flashback.tech
-#  -s3crt ~/s3-eu-central-1-gcp.crt \
-#  -s3key ~/s3-eu-central-1-gcp.key \
-#  -gcscrt ~/gcs-eu-central-1-gcp.crt \
-#  -gcskey ~/gcs-eu-central-1-gcp.key \
-#  -blobcrt ~/blob-eu-central-1-gcp.crt \
-#  -blobkey ~/blob-eu-central-1-gcp.key
+#  -1 ~/s3-eu-central-1-gcp.crt \
+#  -2 ~/s3-eu-central-1-gcp.key \
+#  -3 ~/gcs-eu-central-1-gcp.crt \
+#  -4 ~/gcs-eu-central-1-gcp.key \
+#  -5 ~/blob-eu-central-1-gcp.crt \
+#  -6 ~/blob-eu-central-1-gcp.key
 
 # Rollout script for a Flashback node on Ubuntu 22.04/24.04
 # - Installs Docker and Compose
@@ -44,21 +44,21 @@ BLOB_KEY_SRC=""
 usage() {
   echo "Usage: $0 -r <region> -d <root-domain> [-p <provider>] [-b <backend-url>] -o <org-id> -k <path-to-private-key> [-n <path-to-network-json>] [SSL cert options]" >&2
   echo "SSL cert options:" >&2
-  echo "  -s3crt <path>    Path to S3 certificate (.crt)" >&2
-  echo "  -s3key <path>    Path to S3 private key (.key)" >&2
-  echo "  -gcscrt <path>   Path to GCS certificate (.crt)" >&2
-  echo "  -gcskey <path>   Path to GCS private key (.key)" >&2
-  echo "  -blobcrt <path>  Path to BLOB certificate (.crt)" >&2
-  echo "  -blobkey <path>  Path to BLOB private key (.key)" >&2
+  echo "  -1 <path>        Path to S3 certificate (.crt)" >&2
+  echo "  -2 <path>        Path to S3 private key (.key)" >&2
+  echo "  -3 <path>        Path to GCS certificate (.crt)" >&2
+  echo "  -4 <path>        Path to GCS private key (.key)" >&2
+  echo "  -5 <path>        Path to BLOB certificate (.crt)" >&2
+  echo "  -6 <path>        Path to BLOB private key (.key)" >&2
   echo "Examples:" >&2
   echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/keyR_private.pem \\" >&2
-  echo "     -s3crt ~/s3.crt -s3key ~/s3.key \\" >&2
-  echo "     -gcscrt ~/gcs.crt -gcskey ~/gcs.key \\" >&2
-  echo "     -blobcrt ~/blob.crt -blobkey ~/blob.key" >&2
+  echo "     -1 ~/s3.crt -2 ~/s3.key \\" >&2
+  echo "     -3 ~/gcs.crt -4 ~/gcs.key \\" >&2
+  echo "     -5 ~/blob.crt -6 ~/blob.key" >&2
   echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./keyR_private.pem -b https://backend.flashback.tech" >&2
 }
 
-while getopts ":r:p:d:b:o:k:n:s3crt:s3key:gcscrt:gcskey:blobcrt:blobkey:h" opt; do
+while getopts ":r:p:d:b:o:k:n:1:2:3:4:5:6:h" opt; do
   case "$opt" in
     r) REGION="$OPTARG" ;;
     p) PROVIDER="$OPTARG" ;;
@@ -67,12 +67,12 @@ while getopts ":r:p:d:b:o:k:n:s3crt:s3key:gcscrt:gcskey:blobcrt:blobkey:h" opt; 
     o) ORG_ID="$OPTARG" ;;
     k) KEY_PRIVATE_LOCAL_PATH="$OPTARG" ;;
     n) NETWORK_JSON_LOCAL_PATH="$OPTARG" ;;
-    s3crt) S3_CERT_SRC="$OPTARG" ;;
-    s3key) S3_KEY_SRC="$OPTARG" ;;
-    gcscrt) GCS_CERT_SRC="$OPTARG" ;;
-    gcskey) GCS_KEY_SRC="$OPTARG" ;;
-    blobcrt) BLOB_CERT_SRC="$OPTARG" ;;
-    blobkey) BLOB_KEY_SRC="$OPTARG" ;;
+    1) S3_CERT_SRC="$OPTARG" ;;
+    2) S3_KEY_SRC="$OPTARG" ;;
+    3) GCS_CERT_SRC="$OPTARG" ;;
+    4) GCS_KEY_SRC="$OPTARG" ;;
+    5) BLOB_CERT_SRC="$OPTARG" ;;
+    6) BLOB_KEY_SRC="$OPTARG" ;;
     h) usage; exit 0 ;;
     :) echo "Option -$OPTARG requires an argument" >&2; usage; exit 1 ;;
     \?) echo "Invalid option: -$OPTARG" >&2; usage; exit 1 ;;
