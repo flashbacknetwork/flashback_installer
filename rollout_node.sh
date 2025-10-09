@@ -153,8 +153,6 @@ sudo chown -R "$USER":"$USER" "$FLASHBACK_DIR"
 ########################################
 
 echo "[4/7] Copying key and optional network JSON..."
-cp "$KEY_PRIVATE_LOCAL_PATH" "$FLASHBACK_DIR/keyR_private.pem"
-chmod 600 "$FLASHBACK_DIR/keyR_private.pem"
 
 if [[ -n "${NETWORK_JSON_LOCAL_PATH}" ]]; then
   if [[ -f "$NETWORK_JSON_LOCAL_PATH" ]]; then
@@ -232,7 +230,7 @@ if [[ -n "$ORG_ID" ]]; then
 else
   SIGN_MSG="${IP}|${REGION}|${TIMESTAMP}"
 fi
-REQ_SIGNATURE=$(echo -n "$SIGN_MSG" | openssl dgst -sha256 -sign "$FLASHBACK_DIR/keyR_private.pem" | base64 -w 0)
+REQ_SIGNATURE=$(echo -n "$SIGN_MSG" | openssl dgst -sha256 -sign "$KEY_PRIVATE_LOCAL_PATH" | base64 -w 0)
 
 SECRETS_PAYLOAD=$(jq -nc \
   --arg ip "$IP" \
@@ -278,7 +276,7 @@ write_env_or_decrypt() {
 
     # Decrypt AES key with RSA-OAEP(SHA-256)
     echo "$key_b64" | base64 -d \
-      | openssl pkeyutl -decrypt -inkey "$FLASHBACK_DIR/keyR_private.pem" \
+      | openssl pkeyutl -decrypt -inkey "$KEY_PRIVATE_LOCAL_PATH" \
           -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 > "$tmp_key"
 
     # Verify HMAC-SHA256 over (iv || ct)
@@ -615,7 +613,7 @@ if [[ -z "$IP" ]]; then
 else
   TIMESTAMP=$(date +%s)
   MESSAGE="${IP}|${REGION}|${TIMESTAMP}"
-  SIGNATURE=$(echo -n "$MESSAGE" | openssl dgst -sha256 -sign "$FLASHBACK_DIR/keyR_private.pem" | base64 -w 0)
+  SIGNATURE=$(echo -n "$MESSAGE" | openssl dgst -sha256 -sign "$KEY_PRIVATE_LOCAL_PATH" | base64 -w 0)
   UPPER_PROVIDER="${PROVIDER^^}"
   NODE_VERSION="0.0.28"
   PAYLOAD=$(jq -nc \
