@@ -225,11 +225,7 @@ fi
 
 TIMESTAMP=$(date +%s)
 # Signature message: ip|region|timestamp or ip|region|timestamp|id_org if provided
-if [[ -n "$ORG_ID" ]]; then
-  SIGN_MSG="${IP}|${REGION}|${TIMESTAMP}|${ORG_ID}"
-else
-  SIGN_MSG="${IP}|${REGION}|${TIMESTAMP}"
-fi
+SIGN_MSG="${IP}|${REGION}|${TIMESTAMP}"
 REQ_SIGNATURE=$(echo -n "$SIGN_MSG" | openssl dgst -sha256 -sign "$KEY_PRIVATE_LOCAL_PATH" | base64 -w 0)
 
 SECRETS_PAYLOAD=$(jq -nc \
@@ -260,7 +256,7 @@ fi
 
 # Extract HTTP status code and response body
 HTTP_STATUS=$(echo "$SECRETS_RESP" | tail -n1)
-RESPONSE_BODY=$(echo "$SECRETS_RESP" | head -n -1)
+RESPONSE_BODY=$(echo "$SECRETS_RESP" | sed '$d')
 
 echo "DEBUG: HTTP Status: $HTTP_STATUS"
 echo "DEBUG: Response body: $RESPONSE_BODY"
