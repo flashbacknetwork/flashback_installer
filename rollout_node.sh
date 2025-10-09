@@ -240,8 +240,40 @@ SECRETS_PAYLOAD=$(jq -nc \
   --arg id_org "$ORG_ID" \
   '{ip:$ip,region:$region,timestamp:$timestamp,signature:$signature,id_org:$id_org}')
 
-SECRETS_RESP=$(curl -sS -X POST "${BACKEND_URL%/}/secrets" -H "Content-Type: application/json" -d "$SECRETS_PAYLOAD") || {
-  echo "Error: failed to fetch secrets from backend" >&2; exit 1; }
+echo "DEBUG: Secrets request arguments:"
+echo "  IP: $IP"
+echo "  REGION: $REGION"
+echo "  TIMESTAMP: $TIMESTAMP"
+echo "  ORG_ID: $ORG_ID"
+echo "  SIGN_MSG: $SIGN_MSG"
+echo "  BACKEND_URL: ${BACKEND_URL%/}/secrets"
+echo "  PAYLOAD: $SECRETS_PAYLOAD"
+
+# Make the request and capture both response and HTTP status
+SECRETS_RESP=$(curl -sS -w "\n%{http_code}" -X POST "${BACKEND_URL%/}/secrets" -H "Content-Type: application/json" -d "$SECRETS_PAYLOAD")
+CURL_EXIT_CODE=$?
+
+if [[ $CURL_EXIT_CODE -ne 0 ]]; then
+  echo "Error: curl failed with exit code $CURL_EXIT_CODE" >&2
+  exit 1
+fi
+
+# Extract HTTP status code and response body
+HTTP_STATUS=$(echo "$SECRETS_RESP" | tail -n1)
+RESPONSE_BODY=$(echo "$SECRETS_RESP" | head -n -1)
+
+echo "DEBUG: HTTP Status: $HTTP_STATUS"
+echo "DEBUG: Response body: $RESPONSE_BODY"
+
+# Check for HTTP error status codes
+if [[ "$HTTP_STATUS" =~ ^[45][0-9][0-9]$ ]]; then
+  echo "Error: HTTP $HTTP_STATUS error from /secrets endpoint" >&2
+  echo "Response: $RESPONSE_BODY" >&2
+  exit 1
+fi
+
+# Use the response body for further processing
+SECRETS_RESP="$RESPONSE_BODY"
 
 write_env_or_decrypt() {
   local json="$1" key_plain="$2" key_enc="$3" out_path="$4"
