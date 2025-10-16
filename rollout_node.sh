@@ -51,11 +51,11 @@ usage() {
   echo "  -5 <path>        Path to BLOB certificate (.crt)" >&2
   echo "  -6 <path>        Path to BLOB private key (.key)" >&2
   echo "Examples:" >&2
-  echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/keyR_private.pem \\" >&2
+  echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/private_key.pem \\" >&2
   echo "     -1 ~/s3.crt -2 ~/s3.key \\" >&2
   echo "     -3 ~/gcs.crt -4 ~/gcs.key \\" >&2
   echo "     -5 ~/blob.crt -6 ~/blob.key" >&2
-  echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./keyR_private.pem -b https://backend.flashback.tech" >&2
+  echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./private_key.pem -b https://backend.flashback.tech" >&2
 }
 
 while getopts ":r:p:d:b:o:k:n:1:2:3:4:5:6:h" opt; do
@@ -566,7 +566,6 @@ services:
       - REGION=$REGION
     volumes:
       - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json
-      - $FLASHBACK_DIR/keyR_private.pem:/app/keyR_private.pem
       - $FLASHBACK_DIR/.env.s3:/app/.env.s3
     networks:
       - api-net
@@ -581,7 +580,6 @@ services:
       - REGION=$REGION
     volumes:
       - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json
-      - $FLASHBACK_DIR/keyR_private.pem:/app/keyR_private.pem
       - $FLASHBACK_DIR/.env.gcs:/app/.env.gcs
     networks:
       - api-net
@@ -596,7 +594,6 @@ services:
       - REGION=$REGION
     volumes:
       - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json
-      - $FLASHBACK_DIR/keyR_private.pem:/app/keyR_private.pem
       - $FLASHBACK_DIR/.env.blob:/app/.env.blob
     networks:
       - api-net
