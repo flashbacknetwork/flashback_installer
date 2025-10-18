@@ -32,6 +32,7 @@ BACKEND_URL="https://backend.flashback.tech"
 ORG_ID=""
 KEY_PRIVATE_LOCAL_PATH=""  # Path on this machine to RSA private key to copy
 NETWORK_JSON_LOCAL_PATH=""  # Optional: flashback-network-delegated.json local path to copy
+KEYR_PRIVATE_LOCAL_PATH=""  # Optional: custom keyR_private.pem to override image-bundled key
 
 # SSL certificate paths
 S3_CERT_SRC=""
@@ -42,7 +43,7 @@ BLOB_CERT_SRC=""
 BLOB_KEY_SRC=""
 
 usage() {
-  echo "Usage: $0 -r <region> -d <root-domain> [-p <provider>] [-b <backend-url>] -o <org-id> -k <path-to-private-key> [-n <path-to-network-json>] [SSL cert options]" >&2
+  echo "Usage: $0 -r <region> -d <root-domain> [-p <provider>] [-b <backend-url>] -o <org-id> -k <path-to-private-key> [-n <path-to-network-json>] [-R <path-to-keyR-private>] [SSL cert options]" >&2
   echo "SSL cert options:" >&2
   echo "  -1 <path>        Path to S3 certificate (.crt)" >&2
   echo "  -2 <path>        Path to S3 private key (.key)" >&2
@@ -50,15 +51,17 @@ usage() {
   echo "  -4 <path>        Path to GCS private key (.key)" >&2
   echo "  -5 <path>        Path to BLOB certificate (.crt)" >&2
   echo "  -6 <path>        Path to BLOB private key (.key)" >&2
+  echo "  -R <path>        Path to custom keyR_private.pem (overrides image-bundled key)" >&2
   echo "Examples:" >&2
   echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/private_key.pem \\" >&2
   echo "     -1 ~/s3.crt -2 ~/s3.key \\" >&2
   echo "     -3 ~/gcs.crt -4 ~/gcs.key \\" >&2
   echo "     -5 ~/blob.crt -6 ~/blob.key" >&2
   echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./private_key.pem -b https://backend.flashback.tech" >&2
+  echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./private_key.pem -R ./test_keyR_private.pem" >&2
 }
 
-while getopts ":r:p:d:b:o:k:n:1:2:3:4:5:6:h" opt; do
+while getopts ":r:p:d:b:o:k:n:R:1:2:3:4:5:6:h" opt; do
   case "$opt" in
     r) REGION="$OPTARG" ;;
     p) PROVIDER="$OPTARG" ;;
@@ -67,6 +70,7 @@ while getopts ":r:p:d:b:o:k:n:1:2:3:4:5:6:h" opt; do
     o) ORG_ID="$OPTARG" ;;
     k) KEY_PRIVATE_LOCAL_PATH="$OPTARG" ;;
     n) NETWORK_JSON_LOCAL_PATH="$OPTARG" ;;
+    R) KEYR_PRIVATE_LOCAL_PATH="$OPTARG" ;;
     1) S3_CERT_SRC="$OPTARG" ;;
     2) S3_KEY_SRC="$OPTARG" ;;
     3) GCS_CERT_SRC="$OPTARG" ;;
@@ -87,6 +91,11 @@ fi
 
 if [[ ! -f "$KEY_PRIVATE_LOCAL_PATH" ]]; then
   echo "Private key file not found: $KEY_PRIVATE_LOCAL_PATH" >&2
+  exit 1
+fi
+
+if [[ -n "$KEYR_PRIVATE_LOCAL_PATH" && ! -f "$KEYR_PRIVATE_LOCAL_PATH" ]]; then
+  echo "Custom keyR_private.pem file not found: $KEYR_PRIVATE_LOCAL_PATH" >&2
   exit 1
 fi
 
@@ -541,6 +550,25 @@ if [[ -d "$FLASHBACK_DIR/keyR_private.pem" ]]; then
   rm -rf "$FLASHBACK_DIR/keyR_private.pem"
 fi
 
+# Copy custom keyR_private.pem if provided
+if [[ -n "$KEYR_PRIVATE_LOCAL_PATH" ]]; then
+  echo "Copying custom keyR_private.pem..."
+  cp "$KEYR_PRIVATE_LOCAL_PATH" "$FLASHBACK_DIR/keyR_private.pem"
+  chmod 600 "$FLASHBACK_DIR/keyR_private.pem"
+  echo "Custom keyR_private.pem copied to $FLASHBACK_DIR/keyR_private.pem"
+fi
+
+# Generate volumes section for services
+generate_volumes() {
+  local env_file="$1"
+  echo "    volumes:"
+  echo "      - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json"
+  if [[ -n "$KEYR_PRIVATE_LOCAL_PATH" ]]; then
+    echo "      - $FLASHBACK_DIR/keyR_private.pem:/app/keyR_private.pem"
+  fi
+  echo "      - $FLASHBACK_DIR/$env_file:/app/$env_file"
+}
+
 cat > "$FLASHBACK_DIR/docker-compose.yml" <<EOF
 version: '3.3'
 services:
@@ -571,9 +599,7 @@ services:
       - $FLASHBACK_DIR/.env.s3
     environment:
       - REGION=$REGION
-    volumes:
-      - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json
-      - $FLASHBACK_DIR/.env.s3:/app/.env.s3
+$(generate_volumes ".env.s3")
     networks:
       - api-net
 
@@ -585,9 +611,7 @@ services:
       - $FLASHBACK_DIR/.env.gcs
     environment:
       - REGION=$REGION
-    volumes:
-      - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json
-      - $FLASHBACK_DIR/.env.gcs:/app/.env.gcs
+$(generate_volumes ".env.gcs")
     networks:
       - api-net
 
@@ -599,9 +623,7 @@ services:
       - $FLASHBACK_DIR/.env.blob
     environment:
       - REGION=$REGION
-    volumes:
-      - $FLASHBACK_DIR/flashback-network-delegated.json:/app/flashback-network-delegated.json
-      - $FLASHBACK_DIR/.env.blob:/app/.env.blob
+$(generate_volumes ".env.blob")
     networks:
       - api-net
 
