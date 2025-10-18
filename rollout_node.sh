@@ -534,6 +534,13 @@ EOF
 ########################################
 
 echo "[7/7] Writing docker-compose.yml and starting services..."
+
+# Clean up any existing keyR_private.pem directory (leftover from previous bind mounts)
+if [[ -d "$FLASHBACK_DIR/keyR_private.pem" ]]; then
+  echo "Cleaning up existing keyR_private.pem directory..."
+  rm -rf "$FLASHBACK_DIR/keyR_private.pem"
+fi
+
 cat > "$FLASHBACK_DIR/docker-compose.yml" <<EOF
 version: '3.3'
 services:
