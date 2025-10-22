@@ -42,26 +42,53 @@ GCS_KEY_SRC=""
 BLOB_CERT_SRC=""
 BLOB_KEY_SRC=""
 
+# PFX/P12 certificate paths (alternative to separate crt/key files)
+S3_PFX_SRC=""
+GCS_PFX_SRC=""
+BLOB_PFX_SRC=""
+
+# PFX passwords (can be provided via environment variables or prompted)
+S3_PFX_PASSWORD="${S3_PFX_PASSWORD:-}"
+GCS_PFX_PASSWORD="${GCS_PFX_PASSWORD:-}"
+BLOB_PFX_PASSWORD="${BLOB_PFX_PASSWORD:-}"
+
 usage() {
   echo "Usage: $0 -r <region> -d <root-domain> [-p <provider>] [-b <backend-url>] -o <org-id> -k <path-to-private-key> [-n <path-to-network-json>] [-R <path-to-keyR-private>] [SSL cert options]" >&2
-  echo "SSL cert options:" >&2
-  echo "  -1 <path>        Path to S3 certificate (.crt)" >&2
-  echo "  -2 <path>        Path to S3 private key (.key)" >&2
-  echo "  -3 <path>        Path to GCS certificate (.crt)" >&2
-  echo "  -4 <path>        Path to GCS private key (.key)" >&2
-  echo "  -5 <path>        Path to BLOB certificate (.crt)" >&2
-  echo "  -6 <path>        Path to BLOB private key (.key)" >&2
-  echo "  -R <path>        Path to custom keyR_private.pem (overrides image-bundled key)" >&2
+  echo "SSL cert options (choose one format per service):" >&2
+  echo "  Separate certificate files:" >&2
+  echo "    -1 <path>        Path to S3 certificate (.crt)" >&2
+  echo "    -2 <path>        Path to S3 private key (.key)" >&2
+  echo "    -3 <path>        Path to GCS certificate (.crt)" >&2
+  echo "    -4 <path>        Path to GCS private key (.key)" >&2
+  echo "    -5 <path>        Path to BLOB certificate (.crt)" >&2
+  echo "    -6 <path>        Path to BLOB private key (.key)" >&2
+  echo "  PFX/P12 certificate files (single file per service):" >&2
+  echo "    -s3pfx <path>    Path to S3 PFX/P12 certificate file" >&2
+  echo "    -gcspfx <path>   Path to GCS PFX/P12 certificate file" >&2
+  echo "    -blobpfx <path>  Path to BLOB PFX/P12 certificate file" >&2
+  echo "    Note: PFX passwords can be set via environment variables:" >&2
+  echo "      S3_PFX_PASSWORD, GCS_PFX_PASSWORD, BLOB_PFX_PASSWORD" >&2
+  echo "  Other options:" >&2
+  echo "    -R <path>        Path to custom keyR_private.pem (overrides image-bundled key)" >&2
   echo "Examples:" >&2
+  echo "  # Using separate crt/key files:" >&2
   echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/private_key.pem \\" >&2
   echo "     -1 ~/s3.crt -2 ~/s3.key \\" >&2
   echo "     -3 ~/gcs.crt -4 ~/gcs.key \\" >&2
   echo "     -5 ~/blob.crt -6 ~/blob.key" >&2
-  echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./private_key.pem -b https://backend.flashback.tech" >&2
-  echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./private_key.pem -R ./test_keyR_private.pem" >&2
+  echo "  # Using PFX files:" >&2
+  echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/private_key.pem \\" >&2
+  echo "     -s3pfx ~/s3.pfx -gcspfx ~/gcs.pfx -blobpfx ~/blob.pfx" >&2
+  echo "  # Using PFX files with environment variable passwords:" >&2
+  echo "  S3_PFX_PASSWORD=secret GCS_PFX_PASSWORD=secret BLOB_PFX_PASSWORD=secret \\" >&2
+  echo "  $0 -r eu-central-1 -d mycompany.com -p aws -o <ORG_ID> -k ~/private_key.pem \\" >&2
+  echo "     -s3pfx ~/s3.pfx -gcspfx ~/gcs.pfx -blobpfx ~/blob.pfx" >&2
+  echo "  # Mixed format (some PFX, some separate files):" >&2
+  echo "  $0 -r us-east-1 -d mycompany.com -o <ORG_ID> -k ./private_key.pem \\" >&2
+  echo "     -s3pfx ~/s3.pfx -3 ~/gcs.crt -4 ~/gcs.key -blobpfx ~/blob.pfx" >&2
 }
 
-while getopts ":r:p:d:b:o:k:n:R:1:2:3:4:5:6:h" opt; do
+while getopts ":r:p:d:b:o:k:n:R:1:2:3:4:5:6:s3pfx:gcspfx:blobpfx:h" opt; do
   case "$opt" in
     r) REGION="$OPTARG" ;;
     p) PROVIDER="$OPTARG" ;;
@@ -77,6 +104,9 @@ while getopts ":r:p:d:b:o:k:n:R:1:2:3:4:5:6:h" opt; do
     4) GCS_KEY_SRC="$OPTARG" ;;
     5) BLOB_CERT_SRC="$OPTARG" ;;
     6) BLOB_KEY_SRC="$OPTARG" ;;
+    s3pfx) S3_PFX_SRC="$OPTARG" ;;
+    gcspfx) GCS_PFX_SRC="$OPTARG" ;;
+    blobpfx) BLOB_PFX_SRC="$OPTARG" ;;
     h) usage; exit 0 ;;
     :) echo "Option -$OPTARG requires an argument" >&2; usage; exit 1 ;;
     \?) echo "Invalid option: -$OPTARG" >&2; usage; exit 1 ;;
@@ -98,6 +128,51 @@ if [[ -n "$KEYR_PRIVATE_LOCAL_PATH" && ! -f "$KEYR_PRIVATE_LOCAL_PATH" ]]; then
   echo "Custom keyR_private.pem file not found: $KEYR_PRIVATE_LOCAL_PATH" >&2
   exit 1
 fi
+
+########################################
+# PFX certificate extraction function
+########################################
+
+extract_pfx_certificate() {
+  local pfx_file="$1"
+  local cert_file="$2"
+  local key_file="$3"
+  local pfx_password="$4"
+  
+  if [[ ! -f "$pfx_file" ]]; then
+    echo "Error: PFX file not found: $pfx_file" >&2
+    return 1
+  fi
+  
+  # Handle empty password (some PFX files don't have passwords)
+  local passin_arg=""
+  if [[ -n "$pfx_password" ]]; then
+    passin_arg="pass:$pfx_password"
+  else
+    passin_arg="pass:"
+  fi
+  
+  # Extract certificate
+  if ! openssl pkcs12 -in "$pfx_file" -out "$cert_file" -nokeys -clcerts -passin "$passin_arg" 2>/dev/null; then
+    echo "Error: Failed to extract certificate from PFX file: $pfx_file" >&2
+    echo "This might be due to an incorrect password or corrupted PFX file" >&2
+    return 1
+  fi
+  
+  # Extract private key
+  if ! openssl pkcs12 -in "$pfx_file" -out "$key_file" -nocerts -nodes -passin "$passin_arg" 2>/dev/null; then
+    echo "Error: Failed to extract private key from PFX file: $pfx_file" >&2
+    echo "This might be due to an incorrect password or corrupted PFX file" >&2
+    return 1
+  fi
+  
+  # Set proper permissions
+  chmod 644 "$cert_file"
+  chmod 600 "$key_file"
+  
+  echo "Successfully extracted certificate and key from $pfx_file"
+  return 0
+}
 
 ########################################
 # Derived names
@@ -178,47 +253,92 @@ GCS_CERT_SRC=$(eval echo "$GCS_CERT_SRC")
 GCS_KEY_SRC=$(eval echo "$GCS_KEY_SRC")
 BLOB_CERT_SRC=$(eval echo "$BLOB_CERT_SRC")
 BLOB_KEY_SRC=$(eval echo "$BLOB_KEY_SRC")
+S3_PFX_SRC=$(eval echo "$S3_PFX_SRC")
+GCS_PFX_SRC=$(eval echo "$GCS_PFX_SRC")
+BLOB_PFX_SRC=$(eval echo "$BLOB_PFX_SRC")
 
 # Debug output
 echo "DEBUG: SSL cert paths after expansion:"
 echo "  S3_CERT_SRC: '$S3_CERT_SRC'"
 echo "  S3_KEY_SRC: '$S3_KEY_SRC'"
+echo "  S3_PFX_SRC: '$S3_PFX_SRC'"
 echo "  GCS_CERT_SRC: '$GCS_CERT_SRC'"
 echo "  GCS_KEY_SRC: '$GCS_KEY_SRC'"
+echo "  GCS_PFX_SRC: '$GCS_PFX_SRC'"
 echo "  BLOB_CERT_SRC: '$BLOB_CERT_SRC'"
 echo "  BLOB_KEY_SRC: '$BLOB_KEY_SRC'"
+echo "  BLOB_PFX_SRC: '$BLOB_PFX_SRC'"
 
-# Check if SSL cert paths were provided via command line
-if [[ -z "$S3_CERT_SRC" || -z "$S3_KEY_SRC" || -z "$GCS_CERT_SRC" || -z "$GCS_KEY_SRC" || -z "$BLOB_CERT_SRC" || -z "$BLOB_KEY_SRC" ]]; then
-  echo "You now need to ensure the three certificate pairs exist on this machine."
-  echo "You can scp them with any filenames, then provide the paths here for normalization."
-  echo "Alternatively, you can provide them via command line options: -s3crt, -s3key, -gcscrt, -gcskey, -blobcrt, -blobkey"
-  echo ""
-
-  [[ -z "$S3_CERT_SRC" ]] && read -r -p "Path to S3 cert (.crt): " S3_CERT_SRC
-  [[ -z "$S3_KEY_SRC" ]] && read -r -p "Path to S3 key  (.key): " S3_KEY_SRC
-  [[ -z "$GCS_CERT_SRC" ]] && read -r -p "Path to GCS cert (.crt): " GCS_CERT_SRC
-  [[ -z "$GCS_KEY_SRC" ]] && read -r -p "Path to GCS key  (.key): " GCS_KEY_SRC
-  [[ -z "$BLOB_CERT_SRC" ]] && read -r -p "Path to BLOB cert (.crt): " BLOB_CERT_SRC
-  [[ -z "$BLOB_KEY_SRC" ]] && read -r -p "Path to BLOB key  (.key): " BLOB_KEY_SRC
-fi
-
-for f in "$S3_CERT_SRC" "$S3_KEY_SRC" "$GCS_CERT_SRC" "$GCS_KEY_SRC" "$BLOB_CERT_SRC" "$BLOB_KEY_SRC"; do
-  if [[ ! -f "$f" ]]; then
-    echo "File not found: $f" >&2
+# Process certificates for each service
+process_service_certificates() {
+  local service="$1"
+  local cert_src="$2"
+  local key_src="$3"
+  local pfx_src="$4"
+  local cert_name="$5"
+  local key_name="$6"
+  local pfx_password_var="$7"
+  
+  # Check if both separate cert/key and PFX are provided (not allowed)
+  if [[ -n "$cert_src" && -n "$pfx_src" ]]; then
+    echo "Error: Cannot specify both separate certificate files and PFX file for $service" >&2
+    echo "Please use either -${service,,}crt/-${service,,}key OR -${service,,}pfx, not both" >&2
     exit 1
   fi
-done
+  
+  # Check if neither format is provided
+  if [[ -z "$cert_src" && -z "$pfx_src" ]]; then
+    echo "Error: No certificate provided for $service" >&2
+    echo "Please provide either separate certificate files (-${service,,}crt/-${service,,}key) or PFX file (-${service,,}pfx)" >&2
+    exit 1
+  fi
+  
+  if [[ -n "$pfx_src" ]]; then
+    # Process PFX file
+    echo "Processing $service PFX certificate: $pfx_src"
+    if [[ ! -f "$pfx_src" ]]; then
+      echo "Error: PFX file not found: $pfx_src" >&2
+      exit 1
+    fi
+    
+    # Get PFX password from environment variable or prompt
+    local pfx_password
+    if [[ -n "$pfx_password_var" ]]; then
+      pfx_password="$pfx_password_var"
+      echo "Using password from environment variable for $service PFX file"
+    else
+      read -r -s -p "Enter password for $service PFX file: " pfx_password
+      echo ""
+    fi
+    
+    # Extract certificate and key from PFX
+    if ! extract_pfx_certificate "$pfx_src" "$NGINX_SSL_DIR/$cert_name" "$NGINX_SSL_DIR/$key_name" "$pfx_password"; then
+      echo "Error: Failed to extract certificate from $service PFX file" >&2
+      exit 1
+    fi
+  else
+    # Process separate certificate files
+    echo "Processing $service separate certificate files"
+    if [[ ! -f "$cert_src" ]]; then
+      echo "Error: Certificate file not found: $cert_src" >&2
+      exit 1
+    fi
+    if [[ ! -f "$key_src" ]]; then
+      echo "Error: Key file not found: $key_src" >&2
+      exit 1
+    fi
+    
+    cp "$cert_src" "$NGINX_SSL_DIR/$cert_name"
+    cp "$key_src" "$NGINX_SSL_DIR/$key_name"
+    chmod 644 "$NGINX_SSL_DIR/$cert_name"
+    chmod 600 "$NGINX_SSL_DIR/$key_name"
+  fi
+}
 
-cp "$S3_CERT_SRC" "$NGINX_SSL_DIR/$S3_CERT_NAME"
-cp "$S3_KEY_SRC"  "$NGINX_SSL_DIR/$S3_KEY_NAME"
-cp "$GCS_CERT_SRC" "$NGINX_SSL_DIR/$GCS_CERT_NAME"
-cp "$GCS_KEY_SRC"  "$NGINX_SSL_DIR/$GCS_KEY_NAME"
-cp "$BLOB_CERT_SRC" "$NGINX_SSL_DIR/$BLOB_CERT_NAME"
-cp "$BLOB_KEY_SRC"  "$NGINX_SSL_DIR/$BLOB_KEY_NAME"
-
-chmod 600 "$NGINX_SSL_DIR/$S3_KEY_NAME" "$NGINX_SSL_DIR/$GCS_KEY_NAME" "$NGINX_SSL_DIR/$BLOB_KEY_NAME"
-chmod 644 "$NGINX_SSL_DIR/$S3_CERT_NAME" "$NGINX_SSL_DIR/$GCS_CERT_NAME" "$NGINX_SSL_DIR/$BLOB_CERT_NAME"
+# Process certificates for each service
+process_service_certificates "S3" "$S3_CERT_SRC" "$S3_KEY_SRC" "$S3_PFX_SRC" "$S3_CERT_NAME" "$S3_KEY_NAME" "$S3_PFX_PASSWORD"
+process_service_certificates "GCS" "$GCS_CERT_SRC" "$GCS_KEY_SRC" "$GCS_PFX_SRC" "$GCS_CERT_NAME" "$GCS_KEY_NAME" "$GCS_PFX_PASSWORD"
+process_service_certificates "BLOB" "$BLOB_CERT_SRC" "$BLOB_KEY_SRC" "$BLOB_PFX_SRC" "$BLOB_CERT_NAME" "$BLOB_KEY_NAME" "$BLOB_PFX_PASSWORD"
 
 ########################################
 # Fetch .env files for services from backend
@@ -410,7 +530,7 @@ server {
     server_name "~^(?:(?<bucket>[^.]+)\.)?${S3_DOMAIN//./\\.}$";
 
     # Add resolver for Docker DNS
-    resolver 127.0.0.1 ipv6=off valid=30s;
+    resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate /etc/nginx/ssl/$S3_CERT_NAME;
     ssl_certificate_key /etc/nginx/ssl/$S3_KEY_NAME;
@@ -468,7 +588,7 @@ server {
     server_name "~^${GCS_DOMAIN//./\\.}$";
 
     # Add resolver for Docker DNS
-    resolver 127.0.0.1 ipv6=off valid=30s;
+    resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate /etc/nginx/ssl/$GCS_CERT_NAME;
     ssl_certificate_key /etc/nginx/ssl/$GCS_KEY_NAME;
@@ -506,7 +626,7 @@ server {
     server_name "~^(?:(?<storageaccount>[^.]+)\.)?${BLOB_DOMAIN//./\\.}$";
 
     # Add resolver for Docker DNS
-    resolver 127.0.0.1 ipv6=off valid=30s;
+    resolver 127.0.0.11 ipv6=off valid=30s;
 
     ssl_certificate /etc/nginx/ssl/$BLOB_CERT_NAME;
     ssl_certificate_key /etc/nginx/ssl/$BLOB_KEY_NAME;
