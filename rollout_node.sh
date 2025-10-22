@@ -670,7 +670,7 @@ else
     --argjson timestamp "$TIMESTAMP" \
     --arg signature "$SIGNATURE" \
     --arg org_id "$ORG_ID" \
-    '{provider:$provider,region:$region,ip:$ip,status:$status,version:$version,timestamp:$timestamp,signature:$signature,org_id:$org_id}')
+    '{provider:$provider,region:$region,ip:$ip,status:$status,version:$version,timestamp:$timestamp,signature:$signature,id_org:$org_id}')
   if [[ -z "$UPPER_PROVIDER" ]]; then
     # Remove provider field if empty
     PAYLOAD=$(echo "$PAYLOAD" | jq 'del(.provider)')
